@@ -355,3 +355,224 @@ modelo3<- glm(diabetes_factor ~ . - smoking_history,
                         data = data_entrenamiento, family = "binomial")
 summary(modelo3)
 
+#modelo 4
+modelo4<- glm(diabetes_factor ~ . - smoking_history - gender,
+              data = data_entrenamiento, family = "binomial")
+
+
+summary(modelo4)
+
+exp(cbind(OR =coef(modelo4), confint(modelo4)))
+
+table(data_entrenamiento$diabetes_factor)
+
+# aplicar el modelo a la tabla de entrenamiento
+predicciones <- predict(modelo4, newdata = data_entrenamiento,
+                        type = "response")
+print(predicciones)
+
+#los resultados arrojados están presentados en probabilidad. 
+#Para la clasificación se pasan a valores 1 o 0. 1: diabetes"
+
+predicciones_modelo4 <- if_else(predicciones > 0.5, 1, 0)
+
+data_entrenamiento$predicciones_modelo4<- predicciones_modelo4
+head (data_entrenamiento)
+
+table(data_entrenamiento$diabetes_factor,data_entrenamiento$predicciones_modelo4)
+
+
+table(data_entrenamiento$diabetes_factor)
+
+#75047 NO diabeticos, 4953 diabeticos : posible interpretacion
+
+#poner nombre a la matrix - SE LLAMA MATRIX DE CONFUSION
+conf_matrix <- table(data_entrenamiento$diabetes_f, data_entrenamiento$predicciones_modelo4,
+                     dnn = c("observaciones", "predicciones"))
+print(conf_matrix)
+
+#Interpretacion: 72482 que no tienen diabetes y el modelo predice que no tienen diabetes (True Negative)
+                 #4312 que si tienen diabetes y que el modelo predice que si tienen diabetes.  (True Positive)
+                 #2565 que si tienen diabetes y que el modelo predice que no tiene diabetes - malo (False Positive)
+                 # 641 que no tienen diabtes y que el modelo predice que si tiene diabetes. - malo (False Negative)
+
+
+Rendimiento del modelo
+# Exactitud (accuracy)
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+print(paste("Accuracy:", accuracy))
+
+sum(conf_matrix)
+sum(diag(conf_matrix))
+
+# Sensibilidad (recall o tasa positiva verdadera)
+sensitivity <- conf_matrix[2, 2] / sum(conf_matrix[2, ])
+print(paste("Sensitivity:", sensitivity))
+
+
+sum(conf_matrix[2, ])
+conf_matrix[2, 2] 
+
+# Especificidad (tasa negativa verdadera)
+specificity <- conf_matrix[1, 1] / sum(conf_matrix[1, ])
+print(paste("Specificity:", specificity))
+
+sum(conf_matrix[1, ])
+conf_matrix[1, 1] 
+
+Otros indicadores
+install.packages("caret")
+library(caret)
+confusionMatrix(data=as.factor(data_entrenamiento$predicciones_modelo4), 
+                reference = as.factor(data_entrenamiento$diabetes_f), 
+                positive="1")
+
+# Aplicar el modelo a la data de prueba
+predicciones_prueba <- predict(modelo4, newdata = data_prueba,
+                        type = "response")
+print(predicciones_prueba)
+
+predicciones_prueba_calif <- if_else(predicciones_prueba > 0.5, 1, 0)
+
+data_prueba$predicciones_modelo4<- predicciones_prueba_calif
+head (data_prueba)
+
+conf_matriz_prueba<-table(data_prueba$diabetes_factor,data_prueba$predicciones_modelo4)
+
+
+table(data_prueba$diabetes_factor)
+
+#redimiento del modelo
+# Exactitud (accuracy)
+accuracy <- sum(diag(conf_matriz_prueba)) / sum(conf_matriz_prueba)
+print(paste("Accuracy:", accuracy))
+
+sum(conf_matriz_pruebax)
+sum(diag(conf_matriz_prueba))
+
+# Sensibilidad (recall o tasa positiva verdadera)
+sensitivity <- conf_matriz_prueba[2, 2] / sum(conf_matriz_prueba[2, ])
+print(paste("Sensitivity:", sensitivity))
+
+
+sum(conf_matriz_prueba[2, ])
+conf_matriz_prueba[2, 2] 
+
+# Especificidad (tasa negativa verdadera)
+specificity <- conf_matriz_prueba[1, 1] / sum(conf_matriz_prueba[1, ])
+print(paste("Specificity:", specificity))
+
+sum(conf_matriz_prueba[1, ])
+conf_matriz_prueba[1, 1] 
+
+#nota cuando los indicadores son mas altos en la data de entrenamiento y muy bajos y/o diferentes
+#en la dat de prueba, puede estan indicando sobreajuste, eso se conoce en Overfitting
+
+confusionMatrix(data=as.factor(data_prueba$predicciones_modelo4), 
+                reference = as.factor(data_prueba$diabetes_factor), 
+                positive="1")
+
+head(data_prueba)
+
+
+### K FOLD CROSS VALIDATION - VALIDACIÓN CRUZADA #####
+install.packages("e1071")
+library(e1071)
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+
+
+datos <- read.csv ("C:/Users/jocam/OneDrive/Escritorio/ESTUDIO/ANALISIS DE DATOS_MACHING/DATOS/diabetes_prediction_dataset.csv")
+datos$diabetes_factor <- as.factor(datos$diabetes)
+head(datos)
+datos <- datos %>% 
+  select(-diabetes)
+head(datos)
+dim(datos)
+
+#datos <- datos[1:20,]
+
+# "se procede a preparar los datos para crear 10 conjuntos de entrenamiento"
+
+set.seed(123) #si no se esta corriendo el programa desde el principio fijar la semilla
+
+#se barajan los indices del conjunto de datos 
+
+n <- nrow(datos) 
+indices_vc <- sample(1:n) # vc: validacion cruzada
+
+#los indices_cv se dividen en 10 grupos 
+
+
+grupos <- cut(indices_vc, breaks=10, labels=FALSE)
+
+#"el siguiente paso es crear una funcion que permita entrenar el modelo, realizar
+#predicciones y evaluar estas predicciones"
+
+evaluar_modelos_vc <- function(data_entrenamiento_vc, data_prueba_vc, tipo_modelo) {
+  
+  if (tipo_modelo == "r_logistica") {
+    # Se entrena el modelo de regresión logística
+    modelo <- glm(diabetes_factor ~ . - smoking_history -gender,
+                  family = binomial(link = 'logit'), data = data_entrenamiento_vc)
+    
+    
+    # Se predicen las probabilidades
+    predicciones_vc <- predict(modelo, newdata = data_prueba_vc, type = "response")
+    
+    # Dado que estas predicciones son dadas en probabilidad deben convertirse 
+    # a un tipo de respuesta 0 o 1 (clases) dependiendo de si retira o no ( 1: se retira)
+    predicciones_vc <- ifelse(predicciones_vc >= 0.5, 1, 0)
+    
+  } else if (tipo_modelo == "svm") {
+    # Se entrena el modelo
+    modelo <- svm(diabetes_factor ~ . - smoking_history -gender,
+                  type = 'C-classification', kernel = 'radial', 
+                  data = data_entrenamiento_vc)
+    
+    # Se predicen las clases. este modelo arroja directamente valores 0 o 1
+    predicciones_vc <- predict(modelo, newdata = data_prueba_vc)
+    
+  }
+  
+  # Calcular métricas
+  actual_vc <- data_prueba_vc$diabetes_factor
+  confusion_vc <- table(Prediccion = predicciones_vc, Actual = actual_vc)
+  exactitud_vc <- sum(diag(confusion_vc)) / sum(confusion_vc)
+  sensibilidad_vc <- confusion_vc[2,2] / sum(confusion_vc[,2])
+  especificidad_vc <- confusion_vc[1,1] / sum(confusion_vc[,1])
+  f1 <- 2 * confusion_vc[2,2] / (2 * confusion_vc[2,2] + 
+                                   confusion_vc[1,2] + 
+                                   confusion_vc[2,1])
+  
+  
+  return(c(Exactitud = exactitud_vc, Sensibilidad = sensibilidad_vc, 
+           Especificidad = especificidad_vc, F1 = f1))
+}
+
+
+#Se crea el contenedor de los resultados de cada grupo o fold
+resultados_vc <- list(r_logistica = vector("list", 10), svm = vector("list", 10))
+
+for (i in 1:10) {
+  # datos de entrenamiento y prueba para el fold o grupo actual
+  prueba_indices <- which(grupos == i)
+  entrenamiento_indices <- setdiff(1:n, prueba_indices)
+  
+  data_entrenamiento_vc <- datos[entrenamiento_indices, ]
+  data_prueba_vc <- datos[prueba_indices, ]
+  
+  # Evaluación de los modelos para el fold o grupo en loop
+  resultados_vc$r_logistica[[i]] <- evaluar_modelos_vc(data_entrenamiento_vc,
+                                                       data_prueba_vc, "r_logistica")
+  resultados_vc$svm[[i]] <- evaluar_modelos_vc(data_entrenamiento_vc,
+                                               data_prueba_vc, "svm")
+  
+}
+
+
+
+
+
+
